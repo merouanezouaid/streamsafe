@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Streamer Mode for ChatGPT</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Streamer Mode for ChatGPT</h1>
+    
+    <div class="toggle-container">
+      <label class="toggle-label">Streamer Mode</label>
+      <label class="switch">
+        <input type="checkbox" id="streamerModeToggle">
+        <span class="slider round"></span>
+      </label>
+      <div class="status-text" id="statusText">OFF</div>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <div class="toggle-container">
+      <label class="toggle-label">Auto-detect Screen Sharing</label>
+      <label class="switch">
+        <input type="checkbox" id="autoDetectToggle">
+        <span class="slider round"></span>
+      </label>
+    </div>
+    
+    <div class="info-text">
+      When enabled, this extension will automatically hide or blur the ChatGPT sidebar when screen sharing is detected.
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
