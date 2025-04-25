@@ -21,14 +21,13 @@ function applyStreamerMode(enabled, hideCompletely = false) {
   
   if (enabled) {
     body.classList.add('streamer-mode-active');
-    body.classList.add('streamer-mode-history-hidden');
     if (hideCompletely) {
       body.classList.add('hide-sidebar');
     } else {
       body.classList.remove('hide-sidebar');
     }
   } else {
-    body.classList.remove('streamer-mode-active', 'hide-sidebar', 'streamer-mode-history-hidden');
+    body.classList.remove('streamer-mode-active', 'hide-sidebar');
   }
 }
 
@@ -39,10 +38,9 @@ function initialize() {
   
   // Check if sidebar exists, if not, try again later (page might still be loading)
   const sidebar = getSidebar();
-  const history = document.getElementById('history');
 
-  // If sidebar or history isn't ready, wait.
-  if (!sidebar || !history) { 
+  // If sidebar isn't ready, wait.
+  if (!sidebar) {
     setTimeout(initialize, 500);
     return;
   }

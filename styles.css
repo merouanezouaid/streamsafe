@@ -10,7 +10,8 @@
 }
 
 /* Hover effect to temporarily reveal sidebar when needed */
-.streamer-mode-active .nav-sidebar:hover {
+.streamer-mode-active .nav-sidebar:hover,
+.streamer-mode-active #history:hover {
   filter: blur(0);
   opacity: 1;
 }
@@ -34,7 +35,8 @@
   display: block;
 }
 
-/* Hide chat history in streamer mode */
-body.streamer-mode-history-hidden #history {
-  display: none !important;
+/* Blur chat history in streamer mode */
+.streamer-mode-active #history {
+  filter: blur(10px);
+  transition: filter 0.3s ease;
 }
