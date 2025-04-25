@@ -8,6 +8,25 @@ body {
   width: 300px;
 }
 
+.watermark {
+  font-size: 12px;
+  color: #8e8ea0;
+  text-align: center;
+  padding: 12px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.watermark a {
+  color: #10a37f;
+  text-decoration: none;
+}
+
+.watermark a:hover {
+  text-decoration: underline;
+}
+
+
+
 .container {
   padding: 16px;
 }
