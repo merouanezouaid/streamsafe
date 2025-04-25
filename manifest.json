@@ -26,6 +26,15 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "toggle-panic-mode": {
+      "suggested_key": {
+        "default": "Alt+X",
+        "mac": "Alt+X"
+      },
+      "description": "Toggle Panic Mode (Hide Chat/Sidebar)"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],

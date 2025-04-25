@@ -1,104 +1,81 @@
 // Background script for Streamer Mode for ChatGPT
-// Handles screen sharing detection and communication between popup and content scripts
+// Handles communication between popup and content scripts and keyboard shortcuts
+
+// Define the target URL pattern directly
+const CHATGPT_URL_PATTERN = 'https://chatgpt.com/*';
 
 // Initialize default settings
 chrome.runtime.onInstalled.addListener(function() {
   chrome.storage.sync.set({
     streamerMode: false,
-    autoDetect: false,
+    autoDetect: false, // Keep this, even if non-functional, to prevent errors if UI isn't removed yet
     hideCompletely: false
   });
 });
 
-// Track screen sharing state
-let isScreenSharing = false;
-
-// Function to detect screen sharing
-async function detectScreenSharing() {
-  try {
-    // Check if auto-detect is enabled
-    const settings = await chrome.storage.sync.get(['autoDetect']);
-    if (!settings.autoDetect) return;
-    
-    // Use getDisplayMedia to detect screen sharing
-    // This is a workaround as extensions can't directly detect system screen sharing
-    // We'll use a permission-based approach to check if screen sharing might be active
-    
-    // Check if any tab has getDisplayMedia permissions
-    chrome.tabs.query({}, function(tabs) {
-      // We can't directly detect screen sharing, but we can monitor for potential indicators
-      // For now, we'll use a message passing approach where the content script can notify
-      // the background script when it detects potential screen sharing
-      
-      // In a real implementation, we would need to use more sophisticated methods
-      // or rely on browser APIs that might become available in the future
-    });
-  } catch (error) {
-    console.error('Error detecting screen sharing:', error);
-  }
-}
-
-// Listen for messages from popup or content scripts
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-  // Handle streamer mode toggle
-  if (request.action === 'updateStreamerMode') {
-    // Forward the message to all ChatGPT tabs
-    chrome.tabs.query({url: 'https://chatgpt.com/*'}, function(tabs) {
-      tabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'toggleStreamerMode',
-          enabled: request.enabled,
-          hideCompletely: request.hideCompletely || false
+// Function to update streamer mode state and notify content scripts
+function setStreamerModeState(enabled) {
+  chrome.storage.sync.get(['hideCompletely'], (settings) => {
+    chrome.storage.sync.get(['streamerMode'], (current) => {
+      if (current.streamerMode === enabled) return;
+      chrome.storage.sync.set({ streamerMode: enabled }, () => {
+        console.log(`Streamer mode ${enabled ? 'enabled' : 'disabled'}. Notifying tabs.`);
+        // Query using the single URL pattern constant
+        chrome.tabs.query({ url: CHATGPT_URL_PATTERN }, function(tabs) {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'toggleStreamerMode',
+              enabled: enabled,
+              hideCompletely: settings.hideCompletely || false
+            }).catch(error => console.log(`Could not send message to tab ${tab.id}: ${error.message}`));
+          });
         });
       });
     });
+  });
+}
+
+// NOTE: Removing the non-functional auto-detect listeners (tabCapture, tabs.onUpdated) for clarity
+/*
+chrome.tabCapture.onStatusChanged.addListener(function(info) { ... });
+chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) { ... });
+*/
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  if (request.action === 'updateStreamerMode') {
+    setStreamerModeState(request.enabled);
+  } else if (request.action === 'updateAutoDetect') {
+    // Listener remains but does nothing functional to prevent errors
+    // if the UI toggle still sends messages before it's removed.
+    console.log('Received updateAutoDetect message (feature disabled).');
+    // We don't enable/disable streamerMode based on this anymore.
   }
-  
-  // Handle auto-detect toggle
-  if (request.action === 'updateAutoDetect') {
-    // If auto-detect is enabled, start monitoring for screen sharing
-    if (request.enabled) {
-      detectScreenSharing();
-    }
-  }
-  
-  // Handle screen sharing detection from content script
-  if (request.action === 'screenSharingDetected') {
-    isScreenSharing = request.isSharing;
-    
-    // If auto-detect is enabled and screen sharing is detected, enable streamer mode
-    chrome.storage.sync.get(['autoDetect'], function(result) {
-      if (result.autoDetect && isScreenSharing) {
-        // Enable streamer mode
-        chrome.storage.sync.set({ streamerMode: true });
-        
-        // Notify all ChatGPT tabs
-        chrome.tabs.query({url: 'https://chatgpt.com/*'}, function(tabs) {
-          tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'toggleStreamerMode',
-              enabled: true
-            });
-          });
-        });
-      } else if (result.autoDetect && !isScreenSharing) {
-        // Disable streamer mode when screen sharing ends
-        chrome.storage.sync.set({ streamerMode: false });
-        
-        // Notify all ChatGPT tabs
-        chrome.tabs.query({url: 'https://chatgpt.com/*'}, function(tabs) {
-          tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'toggleStreamerMode',
-              enabled: false
-            });
-          });
-        });
+
+  Promise.resolve({ status: 'success' }).then(sendResponse);
+  return true;
+});
+
+// Listen for keyboard shortcut command
+chrome.commands.onCommand.addListener(function(command) {
+  if (command === "toggle-panic-mode") {
+    console.log('[Command] Toggle Panic Mode received');
+    // Query using the single URL pattern constant
+    chrome.tabs.query({ url: CHATGPT_URL_PATTERN, active: true, currentWindow: true }, function(tabs) {
+      if (tabs && tabs.length > 0 && tabs[0].id) {
+        const tabId = tabs[0].id;
+        chrome.tabs.sendMessage(tabId, { action: 'togglePanicMode' })
+          .then(response => {
+             if (response) {
+               console.log(`[Command] Panic mode toggled for tab ${tabId}. New state: ${response.panicModeEnabled ? 'ON' : 'OFF'}`);
+             } else {
+               console.error(`[Command] No response from content script on tab ${tabId}.`);
+             }
+          })
+          .catch(error => console.error(`[Command] Error sending togglePanicMode to tab ${tabId}: ${error.message}`));
+      } else {
+        console.log('[Command] No active ChatGPT tab found for pattern:', CHATGPT_URL_PATTERN);
       }
     });
   }
-  
-  // Send response to confirm receipt
-  sendResponse({status: 'success'});
-  return true; // Keep the message channel open for async response
 });
