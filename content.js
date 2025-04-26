@@ -1,241 +1,396 @@
 // Content script for Streamer Mode for ChatGPT
 // This script handles hiding/blurring the sidebar on chat.openai.com
 
-let isPanicModeActive = false; // Track panic mode state locally
+console.log("Streamer Mode Content Script Loaded - Top Level");
 
-// Create streamer mode indicator element
-function createIndicator() {
-  const indicator = document.createElement('div');
-  indicator.className = 'streamer-mode-indicator';
-  indicator.textContent = 'Streamer Mode Active';
-  document.body.appendChild(indicator);
+// --- Early Execution: Site Detection & Initial Class Application ---
+let earlyCurrentSite = null;
+const earlySiteConfig = {
+  chatgpt: { urlPattern: /https:\/\/chatgpt\.com\/.*/, siteId: 'chatgpt' },
+  gemini: { urlPattern: /https:\/\/gemini\.google\.com\/app.*/, siteId: 'gemini' }
+};
+
+// Detect site immediately
+for (const key in earlySiteConfig) {
+  if (earlySiteConfig[key].urlPattern.test(window.location.href)) {
+    earlyCurrentSite = earlySiteConfig[key].siteId;
+    break;
+  }
 }
 
-// Function to identify the sidebar element
-function getSidebar() {
-  // ChatGPT's sidebar structure might change, so we use multiple selectors
-  return document.querySelector('nav.nav-sidebar, .dark nav, nav[aria-label="Chat history"]');
+// Apply data-site attribute immediately to HTML element
+if (earlyCurrentSite) {
+  document.documentElement.dataset.site = earlyCurrentSite;
+  console.log(`Early Detection: Site is ${earlyCurrentSite}`);
+
+  // Immediately try to apply streamer-mode-active if settings exist
+  // Note: Storage access is async, so this won't be truly instantaneous,
+  // but it's earlier than waiting for DOMContentLoaded.
+  chrome.storage.sync.get('streamerMode', (result) => {
+    if (result.streamerMode) {
+      document.documentElement.classList.add('streamer-mode-active');
+      console.log('Early Application: streamer-mode-active class added to html.');
+    }
+  });
+} else {
+    console.log("Early Detection: Site not supported.");
 }
+// --- End Early Execution ---
 
-// --- Sensitive Data Masking --- 
 
+// Use the same variable name for consistency later in the script
+let currentSite = earlyCurrentSite;
+
+const siteConfig = {
+  chatgpt: {
+    // urlPattern: /https:\/\/chatgpt\.com\/.*/, // Defined above
+    selectors: {
+      sidebar: 'nav.nav-sidebar, .dark nav, nav[aria-label="Chat history"]',
+      history: '#history',
+      mainContent: 'main',
+      messageContainerParent: '.flex.flex-col.items-center .w-full', 
+      messageContent: 'div[data-message-author-role] div.markdown.prose',
+      panicTargets: ['main', 'nav[aria-label="Chat history"]'],
+    }
+  },
+  gemini: {
+    // urlPattern: /https:\/\/gemini\.google\.com\/app.*/, // Defined above
+    selectors: {
+      sidebar: 'bard-sidenav[role="navigation"]', 
+      history: 'conversations-list', 
+      mainContent: '.main-content', 
+      messageContainerParent: 'div#chat-history', // Scroll container holds messages
+      messageContent: 'message-content, message-paragraph, .markdown', // Combine potential elements
+      panicTargets: ['.main-content', 'bard-sidenav[role="navigation"]'],
+    }
+  }
+};
+
+// Get current site's selectors
+const SELECTORS = currentSite ? siteConfig[currentSite].selectors : {};
+
+// --- State Variables ---
+let isPanicModeActive = false;
+
+// --- Sensitive Data Masking ---
 const MASKING_PATTERNS = [
-  // Email Address
   { name: 'email', regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-  // Basic US Phone Number (various formats) - Adjust for international if needed
   { name: 'phone', regex: /(\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}/g },
-  // Example API Key Pattern (adjust as needed - very basic)
-  // { name: 'apikey', regex: /[a-zA-Z0-9_-]{20,}/g } 
+  { name: 'apikey', regex: /[a-zA-Z0-9_\-]{20,}/g }
 ];
-
 const MASKED_ELEMENT_CLASS = 'masked-data';
 const MASKED_ELEMENT_TAG = 'span';
 
 // Function to apply masking to a single text node
 function maskTextNode(node) {
   let text = node.nodeValue;
+  if (!text || text.length < 3 || /^\s+$/.test(text)) {
+      return false;
+  }
   let hasChanges = false;
   const fragment = document.createDocumentFragment();
   let lastIndex = 0;
-
-  // Create a combined regex for efficiency if needed, or iterate
   MASKING_PATTERNS.forEach(patternInfo => {
-      // Reset lastIndex for each pattern if applying sequentially
-      patternInfo.regex.lastIndex = 0; 
+      patternInfo.regex.lastIndex = 0;
       let match;
-      // Important: We need to re-evaluate based on changes made by previous patterns
-      // This simple loop won't handle overlapping matches from different patterns well.
-      // A more robust approach would find all matches first, sort them, then process.
-      // For now, let's keep it simple, focusing on non-overlapping cases.
-      while ((match = patternInfo.regex.exec(text)) !== null) {
-          hasChanges = true;
-          // Add text before the match
-          if (match.index > lastIndex) {
-              fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+      let currentText = text; 
+      let currentLastIndex = 0;
+      let tempFragment = document.createDocumentFragment();
+      let patternMadeChanges = false; // Track changes per pattern
+      while ((match = patternInfo.regex.exec(currentText)) !== null) {
+          if (match.index < currentLastIndex) {
+              patternInfo.regex.lastIndex = currentLastIndex;
+              continue;
           }
-          // Create and add the masked span
+          hasChanges = true; // Mark global change
+          patternMadeChanges = true; // Mark change for this pattern
+          tempFragment.appendChild(document.createTextNode(currentText.substring(currentLastIndex, match.index)));
           const span = document.createElement(MASKED_ELEMENT_TAG);
           span.className = MASKED_ELEMENT_CLASS;
-          span.dataset.patternName = patternInfo.name; // Store which pattern matched
+          span.dataset.patternName = patternInfo.name;
           span.textContent = match[0];
-          fragment.appendChild(span);
-          lastIndex = patternInfo.regex.lastIndex;
+          tempFragment.appendChild(span);
+          currentLastIndex = patternInfo.regex.lastIndex;
       }
+      // If this pattern made changes, update the main fragment
+      if (patternMadeChanges) {
+        tempFragment.appendChild(document.createTextNode(currentText.substring(currentLastIndex)));
+        fragment.appendChild(tempFragment);
+        // Update text for next iteration (this is still imperfect for overlaps)
+        // text = fragment.textContent; // Simple approach, might mangle things
+      } else if (fragment.childNodes.length === 0 && lastIndex === 0) {
+        // If no pattern has made changes yet, add the original text
+        fragment.appendChild(document.createTextNode(text));
+      }
+      // How to handle text for next pattern is complex, sticking to basic sequential application
   });
-
-  // If changes were made, replace the node
-  if (hasChanges) {
-    // Add any remaining text after the last match
-    if (lastIndex < text.length) {
-      fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
-    }
-    node.parentNode.replaceChild(fragment, node);
-    return true; // Indicate that the node was replaced
+  if (hasChanges && fragment.childNodes.length > 0) {
+     if (fragment.childNodes.length === 1 && fragment.firstChild.nodeType === Node.TEXT_NODE && fragment.firstChild.nodeValue === node.nodeValue) {
+         return false; 
+     }
+     try {
+        // Check if parent exists before replacing
+        if (node.parentNode) {
+           node.parentNode.replaceChild(fragment, node);
+           return true;
+        } else {
+           console.warn("[Masking] Node parent doesn't exist, cannot replace.", node);
+           return false;
+        }
+     } catch (e) {
+        console.error("[Masking] Error replacing node:", e, "Node:", node, "Parent:", node.parentNode, "Fragment:", fragment);
+        return false;
+     }
   }
-  return false; // No changes made
+  return false;
 }
 
 // Function to traverse nodes and apply masking
-function traverseAndMask(node) {
-  // Target elements likely containing user/assistant messages (adjust selectors as needed)
-  // Common ChatGPT selectors might involve divs with specific classes like 'text-base', 'prose', etc.
-  const messageSelectors = '.text-base, .prose, [class*="markdown"]'
-  if (!node.matches || !node.matches(messageSelectors)) {
-      // If the node itself isn't a message container, check its children
-      if (node.childNodes && node.childNodes.length > 0) {
-          // Iterate backwards since maskTextNode can replace nodes
-          for (let i = node.childNodes.length - 1; i >= 0; i--) {
-              traverseAndMask(node.childNodes[i]);
-          }
-      }
-      return;
-  }
-
-  // If the node *is* a message container, process its text nodes
-  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+function traverseAndMask(containerNode) {
+  const walker = document.createTreeWalker(containerNode, NodeFilter.SHOW_TEXT, null, false);
   let textNode;
-  // Need to store nodes to process because the walker is live and node replacement messes it up
   const nodesToProcess = [];
   while(textNode = walker.nextNode()) {
-      // Avoid masking text within already masked spans or script/style tags
-      if (textNode.parentNode.nodeName !== MASKED_ELEMENT_TAG.toUpperCase() && 
-          textNode.parentNode.nodeName !== 'SCRIPT' && 
-          textNode.parentNode.nodeName !== 'STYLE') {
-          nodesToProcess.push(textNode);
+      const parentTag = textNode.parentNode.nodeName;
+      if (parentTag !== MASKED_ELEMENT_TAG.toUpperCase() &&
+          parentTag !== 'SCRIPT' &&
+          parentTag !== 'STYLE') {
+          // Extra check: Ensure parent exists before queueing
+          if (textNode.parentNode) {
+             nodesToProcess.push(textNode);
+          }
       }
   }
-
-  // Process the collected text nodes
   nodesToProcess.forEach(maskTextNode);
 }
 
-
-// MutationObserver to watch for new messages
-const chatObserver = new MutationObserver((mutationsList) => {
-  // Only run if streamer mode is active
-  if (!document.body.classList.contains('streamer-mode-active')) {
-      return; // Don't mask if streamer mode is off
+// (maskExistingMessages uses SELECTORS.messageContent)
+function maskExistingMessages() {
+  if (!SELECTORS.messageContent) {
+      console.warn("[Masking] No message content selector defined for this site.");
+      return;
   }
-  
-  for (const mutation of mutationsList) {
-    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-      mutation.addedNodes.forEach(node => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          // Traverse the new node and its children to mask content
-          traverseAndMask(node);
+  console.log("[Masking] Applying initial mask to existing messages.");
+  const messageContentNodes = document.querySelectorAll(SELECTORS.messageContent);
+  console.log(`[Masking] Found ${messageContentNodes.length} existing message content nodes using selector: ${SELECTORS.messageContent}`);
+  messageContentNodes.forEach(node => {
+      traverseAndMask(node);
+  });
+}
+
+// (MutationObserver setup remains the same)
+let observerTimeout = null;
+const debouncedMasking = (mutationsList) => {
+    clearTimeout(observerTimeout);
+    observerTimeout = setTimeout(() => {
+        // Use documentElement class list now
+        if (!document.documentElement.classList.contains('streamer-mode-active')) {
+            return;
         }
-      });
-    }
-    // Optional: Handle characterData mutations if needed for edits, but can be performance heavy
-    // else if (mutation.type === 'characterData') { ... }
-  }
-});
+        if (!SELECTORS.messageContent) return;
+        // console.log('[Observer] Debounced processing of mutations:', mutationsList.length);
+        let processed = false;
+        for (const mutation of mutationsList) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const contentNodes = node.querySelectorAll(SELECTORS.messageContent);
+                        if (contentNodes.length > 0) {
+                            processed = true;
+                            contentNodes.forEach(contentNode => {
+                                traverseAndMask(contentNode);
+                            });
+                        } else if (node.matches && node.matches(SELECTORS.messageContent)) {
+                            processed = true;
+                            traverseAndMask(node);
+                        }
+                    }
+                });
+            }
+            else if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
+                const parentElement = mutation.target.parentElement;
+                if (parentElement && parentElement.closest && parentElement.closest(SELECTORS.messageContent)) {
+                     if (mutation.oldValue && mutation.oldValue.trim() !== mutation.target.nodeValue.trim()) {
+                         processed = true;
+                         traverseAndMask(parentElement);
+                     }
+                }
+            }
+        }
+        // if (processed) console.log('[Observer] Finished debounced processing.');
+    }, 300);
+};
+const chatObserver = new MutationObserver(debouncedMasking);
 
-// Function to start observing the chat area
+// (startChatObserver uses SELECTORS.messageContainerParent)
 function startChatObserver() {
-  // Find the main chat container (adjust selector if needed)
-  const chatContainer = document.querySelector('main'); // Or a more specific inner element
-  if (chatContainer) {
-    console.log('Starting chat observer for masking.');
-    // Initial mask of existing content when observer starts (and streamer mode is on)
-    if (document.body.classList.contains('streamer-mode-active')) {
-        console.log('Initial masking of existing content.');
-        traverseAndMask(chatContainer);
+  if (!SELECTORS.messageContainerParent) {
+      console.warn("[Observer] No message container parent selector defined for this site.");
+      return;
+  }
+  const conversationContainer = document.querySelector(SELECTORS.messageContainerParent);
+  if (conversationContainer) {
+    console.log('[Observer] Starting chat observer on container:', conversationContainer);
+    // Check documentElement class list now
+    if (document.documentElement.classList.contains('streamer-mode-active')) {
+        maskExistingMessages();
     }
-    chatObserver.observe(chatContainer, { 
-        childList: true, 
-        subtree: true 
-        // characterData: true // Add if needed, but be cautious
+    chatObserver.observe(conversationContainer, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        characterDataOldValue: true
     });
   } else {
-      console.warn('Could not find chat container to observe for masking. Retrying...');
-      setTimeout(startChatObserver, 1000); // Retry if container not found yet
+      console.warn(`[Observer] Could not find conversation container (${SELECTORS.messageContainerParent}) to observe for masking. Retrying...`);
+      setTimeout(startChatObserver, 1500);
   }
 }
 
-// --- End Sensitive Data Masking --- 
+// (stopChatObserver remains the same)
+function stopChatObserver() {
+    console.log('[Observer] Stopping chat observer.');
+    clearTimeout(observerTimeout);
+    try {
+        chatObserver.disconnect();
+    } catch (e) {}
+}
+
+// --- UI Elements and Toggling ---
+
+// (createIndicator remains the same)
+function createIndicator() {
+  if (document.querySelector('.streamer-mode-indicator')) return;
+  const indicator = document.createElement('div');
+  indicator.className = 'streamer-mode-indicator';
+  indicator.textContent = 'Streamer Mode Active';
+  // Append to body once it exists
+  if (document.body) {
+      document.body.appendChild(indicator);
+  } else {
+      // Fallback if body not ready - unlikely with setTimeout in initialize
+      document.addEventListener('DOMContentLoaded', () => {
+          if (!document.querySelector('.streamer-mode-indicator')) { // Double check
+  document.body.appendChild(indicator);
+}
+      });
+  }
+}
 
 // Function to apply streamer mode
 function applyStreamerMode(enabled, hideCompletely = false) {
-  const body = document.body;
-  
-  // Panic mode overrides normal streamer mode visuals
+  const htmlEl = document.documentElement;
+  const bodyEl = document.body;
+  if (!bodyEl) { 
+      console.warn("applyStreamerMode called before body exists.");
+      return; // Body might not be ready yet
+  }
   if (isPanicModeActive) {
-     console.log('Panic mode is active, skipping normal streamer mode style changes.');
+     console.log('Panic mode active, skipping streamer mode style changes.');
      return;
   }
-
-  const currentlyEnabled = body.classList.contains('streamer-mode-active');
-
+  const currentlyEnabled = htmlEl.classList.contains('streamer-mode-active');
+  
   if (enabled) {
-    body.classList.add('streamer-mode-active');
-    if (hideCompletely) {
-      body.classList.add('hide-sidebar');
-    } else {
-      body.classList.remove('hide-sidebar');
-    }
-    // If turning ON, trigger initial mask/observer start
     if (!currentlyEnabled) {
-        startChatObserver(); // This will check body class again inside
+        console.log('Streamer Mode Enabling: Adding class and starting observer.');
+        htmlEl.classList.add('streamer-mode-active'); // Add to html
+        startChatObserver();
+    }
+    // Add/remove body class for hide-sidebar state
+    if (hideCompletely) {
+      bodyEl.classList.add('hide-sidebar'); 
+    } else {
+      bodyEl.classList.remove('hide-sidebar');
     }
   } else {
-    body.classList.remove('streamer-mode-active', 'hide-sidebar');
-    // If turning OFF, we might want to unmask existing elements
-    // Or just let the CSS handle visuals and don't modify DOM further
-    // Let's rely on CSS: removing streamer-mode-active will unblur via CSS.
+    if (currentlyEnabled) {
+        console.log('Streamer Mode Disabling: Removing class and stopping observer.');
+        htmlEl.classList.remove('streamer-mode-active'); // Remove from html
+        stopChatObserver(); 
+    }
+     bodyEl.classList.remove('hide-sidebar');
   }
 }
 
 // Function to toggle panic mode visuals
 function togglePanicVisuals(forceState) {
-  const body = document.body;
-  // Toggle state if forceState is not provided
+  const htmlEl = document.documentElement;
+  const bodyEl = document.body;
+  if (!bodyEl) return false; // Need body
+
   isPanicModeActive = typeof forceState === 'boolean' ? forceState : !isPanicModeActive;
   console.log(`Toggling panic mode visuals. New state: ${isPanicModeActive}`);
+
   if (isPanicModeActive) {
-    body.classList.add('panic-mode-active');
-    // Ensure normal streamer styles are removed if panic is activated
-    body.classList.remove('streamer-mode-active', 'hide-sidebar');
+    htmlEl.classList.add('panic-mode-active'); // Add to html
+    bodyEl.classList.add('panic-mode-active'); // Add to body too (CSS might target body)
+    // Ensure normal streamer styles are visually off
+    htmlEl.classList.remove('streamer-mode-active');
+    bodyEl.classList.remove('hide-sidebar'); 
+    stopChatObserver(); // Stop masking 
   } else {
-    body.classList.remove('panic-mode-active');
-    // Re-apply normal streamer mode if needed after panic mode is turned off
+    htmlEl.classList.remove('panic-mode-active');
+    bodyEl.classList.remove('panic-mode-active');
+    // Re-apply normal streamer mode state if needed
     chrome.storage.sync.get(['streamerMode', 'hideCompletely'], function(settings) {
        applyStreamerMode(settings.streamerMode || false, settings.hideCompletely || false);
     });
   }
-  return isPanicModeActive; // Return the new state
+  return isPanicModeActive;
 }
 
 // Initialize the extension
 function initialize() {
-  // Create the indicator element
+  if (!currentSite || !document.body) { 
+      // Wait for body if initialize was somehow called too early, 
+      // or stop if site not supported
+      if (!document.body) {
+          console.log('Initialize: Waiting for body...');
+          setTimeout(initialize, 50); 
+      } else {
+          console.log('Initialize: Site not supported, stopping initialization.');
+      }
+      return; 
+  }
+  
+  // Check if already initialized (via runInitialize flag)
+  if (document.body.dataset.streamerInit === 'true') return;
+  document.body.dataset.streamerInit = 'true';
+
   createIndicator();
   
-  // Check if sidebar exists, if not, try again later (page might still be loading)
-  const sidebar = getSidebar();
-
-  // If sidebar isn't ready, wait.
-  if (!sidebar) {
-    setTimeout(initialize, 500);
+  // Ready check element selector
+  const readyElementSelector = SELECTORS.history || SELECTORS.sidebar || SELECTORS.mainContent;
+  if (!readyElementSelector || !document.querySelector(readyElementSelector)) {
+      console.log(`Initialization: Waiting for ready element (${readyElementSelector}) to appear...`);
+      // Clear init flag so we can retry
+      document.body.dataset.streamerInit = 'false'; 
+      setTimeout(initialize, 750); 
     return;
   }
   
-  // Load saved settings
+  console.log('Extension Initializing fully for site:', currentSite);
+  // Re-apply based on current storage state (early application might have missed changes)
   chrome.storage.sync.get(['streamerMode', 'hideCompletely'], function(result) {
-    // Apply initial streamer mode (will also trigger observer start if enabled)
+    console.log('Applying settings during full initialization:', result);
     applyStreamerMode(result.streamerMode || false, result.hideCompletely || false);
   });
 }
 
 // Listen for messages from popup or background script
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  if (!currentSite) {
+      sendResponse({ status: 'error', message: 'Site not supported' });
+      return true;
+  }
   let status = 'success';
   let response = {};
 
   if (request.action === 'toggleStreamerMode') {
     // Apply streamer mode only if panic mode isn't active
     if (!isPanicModeActive) {
-      applyStreamerMode(request.enabled, request.hideCompletely || false);
+    applyStreamerMode(request.enabled, request.hideCompletely || false);
     } else {
       console.log('Ignoring toggleStreamerMode message because Panic Mode is active.');
     }
@@ -249,9 +404,10 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   return true; // Keep the message channel open for async response if needed
 });
 
-// Initialize when the page is fully loaded
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initialize);
-} else {
-  initialize();
+// Use a flag to ensure initialize runs only once via setTimeout
+let initTimeoutScheduled = false;
+if (currentSite && !initTimeoutScheduled) {
+    initTimeoutScheduled = true;
+    // Delay initialization slightly to ensure body and initial elements are more likely present
+    setTimeout(initialize, 100); 
 }

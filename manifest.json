@@ -18,10 +18,12 @@
   },
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "tabCapture"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/app*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -37,9 +39,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": [
+        "https://chatgpt.com/*", 
+        "https://gemini.google.com/app*"
+      ],
       "js": ["content.js"],
-      "css": ["styles.css"]
+      "css": ["styles.css"],
+      "run_at": "document_start"
     }
   ]
 }
