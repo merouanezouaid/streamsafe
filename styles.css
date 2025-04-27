@@ -30,7 +30,7 @@ html[data-site="chatgpt"].streamer-mode-active #history:hover {
 .streamer-mode-indicator {
   position: fixed;
   bottom: 10px;
-  left: 10px;
+  right: 10px;
   background-color: rgba(255, 0, 0, 0.7);
   color: white;
   padding: 5px 10px;
