@@ -8,7 +8,7 @@ Streamer Mode for ChatGPT is a browser extension designed to protect your privac
 
 -   **Streamer Mode Toggle:** Quickly enable or disable the blurring/hiding of the sidebar.
 -   **Panic Mode:** Instantly hide the chat and sidebar with a keyboard shortcut (Alt+X).
--   **Sensitive Data Masking:** Blurs email addresses, phone numbers, and API keys in chat messages.
+-   **Sensitive Data Masking:** Blurs email addresses, phone numbers, and API keys in chat messages. (coming soon)
 -   **Site Support:** Works with both ChatGPT and Google Gemini.
 -   **Customizable:** Option to completely hide the sidebar.
 
