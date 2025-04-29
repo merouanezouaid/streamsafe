@@ -347,33 +347,33 @@ function handleSidebarMouseOver(event) {
 
 function handleSidebarMouseOut(event) {
     console.log('[Hover Debug] MouseOut Fired. Target:', event.target, 'CurrentTarget:', event.currentTarget, 'RelatedTarget:', event.relatedTarget);
-    const sidebarContainer = event.currentTarget;
-    const sidebarNavElement = document.querySelector(SELECTORS.sidebar);
+    const historyElement = event.currentTarget; // Listener is now on #history
+    // const sidebarNavElement = document.querySelector(SELECTORS.sidebar); // No longer need nav element check
 
     // Check where the mouse is moving TO
     const relatedTarget = event.relatedTarget;
 
-    // Determine if the mouse is still within the sidebar area (container or nav)
-    const stillInsideContainer = sidebarContainer && relatedTarget && sidebarContainer.contains(relatedTarget);
-    const stillInsideNav = sidebarNavElement && relatedTarget && sidebarNavElement.contains(relatedTarget);
+    // Determine if the mouse is still within the history element area
+    const stillInsideHistory = historyElement && relatedTarget && historyElement.contains(relatedTarget);
+    // const stillInsideNav = sidebarNavElement && relatedTarget && sidebarNavElement.contains(relatedTarget); // No longer need nav
 
-    console.log(`[Hover Debug] MouseOut check: stillInsideContainer=${stillInsideContainer}, stillInsideNav=${stillInsideNav}`);
+    console.log(`[Hover Debug] MouseOut check: stillInsideHistory=${stillInsideHistory}`);
 
-    // Only re-blur if the mouse is moving completely outside the container and its nav content
-    if (sidebarContainer && sidebarContainer.style.display !== 'none' && !stillInsideContainer && !stillInsideNav) {
+    // Only re-blur if the mouse is moving completely outside the history element
+    if (historyElement && historyElement.style.display !== 'none' && !stillInsideHistory) {
         // Re-apply original blur/opacity only if streamer mode is still active (and not panic/hidden)
         chrome.storage.sync.get('streamerMode', (settings) => {
              if (settings.streamerMode && !isPanicModeActive && !document.body.classList.contains('hide-sidebar')) {
-                 console.log('[Hover Debug] Re-blurring. Current filter:', sidebarContainer.style.filter, 'Current opacity:', sidebarContainer.style.opacity);
-                 sidebarContainer.style.setProperty('filter', 'blur(10px)', 'important');
-                 sidebarContainer.style.setProperty('opacity', '0.6', 'important');
-                 console.log('[Hover Debug] Styles set to filter: blur(10px), opacity: 0.6');
+                 console.log('[Hover Debug] Re-blurring #history. Current filter:', historyElement.style.filter, 'Current opacity:', historyElement.style.opacity);
+                 historyElement.style.setProperty('filter', 'blur(10px)', 'important');
+                 historyElement.style.setProperty('opacity', '0.6', 'important');
+                 console.log('[Hover Debug] Styles set on #history to filter: blur(10px), opacity: 0.6');
              } else {
-                  console.log('[Hover Debug] MouseOut - Not re-blurring (Streamer/Panic/Hidden state). Streamer:', settings.streamerMode, 'Panic:', isPanicModeActive, 'HiddenClass:', document.body.classList.contains('hide-sidebar'));
+                  console.log('[Hover Debug] MouseOut - Not re-blurring #history (Streamer/Panic/Hidden state). Streamer:', settings.streamerMode, 'Panic:', isPanicModeActive, 'HiddenClass:', document.body.classList.contains('hide-sidebar'));
              }
         });
     } else {
-         console.log('[Hover Debug] MouseOut - Mouse still inside sidebar area or sidebar hidden/not found, not re-blurring.');
+         console.log('[Hover Debug] MouseOut - Mouse still inside #history or #history hidden/not found, not re-blurring.');
     }
 }
 
@@ -381,7 +381,7 @@ function handleSidebarMouseOut(event) {
 function applyStreamerMode(enabled, hideCompletely = false) {
   const htmlEl = document.documentElement;
   const bodyEl = document.body;
-  if (!bodyEl) { 
+  if (!bodyEl) {
       console.warn("applyStreamerMode called before body exists.");
       return; // Body might not be ready yet
   }
@@ -390,15 +390,16 @@ function applyStreamerMode(enabled, hideCompletely = false) {
      return;
   }
   const currentlyEnabled = htmlEl.classList.contains('streamer-mode-active');
-  const sidebarContainer = document.querySelector(stableSidebarParentSelector);
+  // const sidebarContainer = document.querySelector(stableSidebarParentSelector); // Keep parent ref if needed?
+  const historyElement = document.querySelector(SELECTORS.history);
 
-  // --- Manage Global Class and Observers ---
+  // --- Manage Global Class and Observers --- // Still manage global class/observers
   if (enabled) {
     if (!currentlyEnabled) {
         console.log('Streamer Mode Enabling: Adding class and starting observers.');
         htmlEl.classList.add('streamer-mode-active');
         startChatObserver();
-        startSidebarObserver();
+        startSidebarObserver(); // Keep sidebar observer on parent to detect #history appearing
     }
   } else {
     if (currentlyEnabled) {
@@ -409,56 +410,56 @@ function applyStreamerMode(enabled, hideCompletely = false) {
     }
   }
 
-  // --- Apply Direct Styles to Sidebar Container ---
-  if (sidebarContainer) {
-      // Remove existing listeners first to avoid duplicates
+  // --- Apply Direct Styles to History Element --- // Target #history now
+  if (historyElement) {
+      // Remove existing listeners first from #history
       if (sidebarHoverListenersAttached) {
-          console.log('[Hover Debug] Removing existing mouseover/mouseout listeners.');
-          sidebarContainer.removeEventListener('mouseover', handleSidebarMouseOver);
-          sidebarContainer.removeEventListener('mouseout', handleSidebarMouseOut);
+          console.log('[Hover Debug] Removing existing mouseover/mouseout listeners from #history.');
+          historyElement.removeEventListener('mouseover', handleSidebarMouseOver);
+          historyElement.removeEventListener('mouseout', handleSidebarMouseOut);
           sidebarHoverListenersAttached = false;
       }
 
       if (enabled) {
-          sidebarContainer.style.transition = 'filter 0.3s ease, opacity 0.3s ease, display 0s'; // Add display transition (0s)
+          historyElement.style.transition = 'filter 0.3s ease, opacity 0.3s ease, display 0s'; // Add display transition (0s)
 
           if (hideCompletely) {
-              console.log('[Hover Debug] Applying hideCompletely styles.');
-              sidebarContainer.style.filter = '';
-              sidebarContainer.style.opacity = '';
-              sidebarContainer.style.display = 'none';
-              bodyEl.classList.add('hide-sidebar'); // Keep body class for potential CSS overrides elsewhere
+              console.log('[Hover Debug] Applying hideCompletely styles to #history.');
+              historyElement.style.filter = '';
+              historyElement.style.opacity = '';
+              historyElement.style.display = 'none';
+              bodyEl.classList.add('hide-sidebar'); // Keep body class in case CSS uses it
           } else {
-               console.log('[Hover Debug] Applying blur/dim styles.');
-              sidebarContainer.style.setProperty('filter', 'blur(10px)', 'important');
-              sidebarContainer.style.setProperty('opacity', '0.6', 'important');
-              sidebarContainer.style.display = ''; // Ensure it's visible if switching from hide
+               console.log('[Hover Debug] Applying blur/dim styles to #history.');
+              historyElement.style.setProperty('filter', 'blur(10px)', 'important');
+              historyElement.style.setProperty('opacity', '0.6', 'important');
+              historyElement.style.display = ''; // Ensure it's visible if switching from hide
               bodyEl.classList.remove('hide-sidebar');
 
-              // Add hover listeners only if blurring/dimming
-              console.log('[Hover Debug] Adding mouseover/mouseout listeners.');
-              sidebarContainer.addEventListener('mouseover', handleSidebarMouseOver);
-              sidebarContainer.addEventListener('mouseout', handleSidebarMouseOut);
+              // Add hover listeners only if blurring/dimming, attach to #history
+              console.log('[Hover Debug] Adding mouseover/mouseout listeners to #history.');
+              historyElement.addEventListener('mouseover', handleSidebarMouseOver);
+              historyElement.addEventListener('mouseout', handleSidebarMouseOut);
               sidebarHoverListenersAttached = true;
           }
       } else {
-          // Disable streamer mode: Clear all related inline styles and remove listeners
-          console.log('[Hover Debug] Disabling streamer mode - clearing styles.');
-          sidebarContainer.style.filter = '';
-          sidebarContainer.style.opacity = '';
-          sidebarContainer.style.display = '';
-          sidebarContainer.style.transition = '';
+          // Disable streamer mode: Clear all related inline styles from #history and remove listeners
+          console.log('[Hover Debug] Disabling streamer mode - clearing #history styles.');
+          historyElement.style.filter = '';
+          historyElement.style.opacity = '';
+          historyElement.style.display = '';
+          historyElement.style.transition = '';
           bodyEl.classList.remove('hide-sidebar');
           // Listeners already removed above if they were attached
-          if (sidebarHoverListenersAttached) { // Ensure flag is false if disabled
+          if (sidebarHoverListenersAttached) {
               console.warn('[Hover Debug] Listeners were marked as attached during disable? Setting flag to false.');
               sidebarHoverListenersAttached = false;
           }
       }
   } else {
-      console.warn(`Cannot apply direct styles: Stable sidebar container (${stableSidebarParentSelector}) not found.`);
-      // If enabling and container not found, try again shortly
-      if (enabled) {
+      console.warn(`Cannot apply direct styles: History element (${SELECTORS.history}) not found.`);
+      // If enabling and #history not found, try again shortly (observer should handle this too)
+      if (enabled && !currentlyEnabled) { // Only retry if just enabled
           setTimeout(() => applyStreamerMode(enabled, hideCompletely), 500);
       }
   }
