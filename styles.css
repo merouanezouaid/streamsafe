@@ -5,26 +5,38 @@ body {
 
 /* == ChatGPT Specific Styles == */
 
-/* Streamer Mode Active Styles (ChatGPT) */
-html[data-site="chatgpt"].streamer-mode-active .nav-sidebar, /* Target using html */
-html[data-site="chatgpt"].streamer-mode-active #history { /* Target using html */
-  filter: blur(10px);
-  opacity: 0.6;
+/* Streamer Mode Active Styles (ChatGPT) - Handled by JS now */
+/*
+html[data-site="chatgpt"].streamer-mode-active nav[aria-label="Chat history"],
+html[data-site="chatgpt"].streamer-mode-active #history { 
+  filter: blur(10px) !important; 
+  opacity: 0.6 !important;       
   transition: filter 0.3s ease, opacity 0.3s ease;
 }
+*/
 
-/* Hide completely option (ChatGPT) */
-html[data-site="chatgpt"].streamer-mode-active body.hide-sidebar .nav-sidebar,
-html[data-site="chatgpt"].streamer-mode-active body.hide-sidebar #history {
+/* Override ChatGPT's fade-in animation that conflicts with blur/hide */
+html[data-site="chatgpt"].streamer-mode-active nav[aria-label="Chat history"] ._revealDown_1le9t_1 > *,
+html[data-site="chatgpt"].streamer-mode-active #history ._revealDown_1le9t_1 > * { /* Target children within #history too */
+  animation: none !important;
+}
+
+/* Hide completely option (ChatGPT) - Handled by JS now */
+/*
+html[data-site="chatgpt"].streamer-mode-active body.hide-sidebar nav[aria-label="Chat history"],
+html[data-site="chatgpt"].streamer-mode-active body.hide-sidebar #history { 
   display: none !important;
 }
+*/
 
-/* Hover effect (ChatGPT) */
-html[data-site="chatgpt"].streamer-mode-active .nav-sidebar:hover,
-html[data-site="chatgpt"].streamer-mode-active #history:hover {
-  filter: blur(0);
-  opacity: 1;
+/* Hover effect (ChatGPT) - Handled by JS now */
+/*
+html[data-site="chatgpt"].streamer-mode-active nav[aria-label="Chat history"]:hover,
+html[data-site="chatgpt"].streamer-mode-active #history:hover { 
+  filter: blur(0) !important;  
+  opacity: 1 !important;        
 }
+*/
 
 /* Streamer Mode Indicator (potentially global or site-specific) */
 .streamer-mode-indicator {
@@ -46,6 +58,7 @@ html.streamer-mode-active .streamer-mode-indicator { /* Target using html */
 }
 
 /* Panic Mode (ChatGPT) */
+/* Keep panic styles in CSS */
 html[data-site="chatgpt"].panic-mode-active main,
 html[data-site="chatgpt"].panic-mode-active nav[aria-label="Chat history"] {
   display: none !important; 
@@ -83,17 +96,17 @@ html[data-site="gemini"].panic-mode-active bard-sidenav[role="navigation"] {
 /* == Masking Styles (Global or Scoped) == */
 
 .masked-data {
-  transition: filter 0.3s ease;
+  transition: filter 0.3s ease !important;
 }
 
 /* Apply blur only when streamer mode is active, scoped per site */
 html[data-site="chatgpt"].streamer-mode-active .masked-data,
 html[data-site="gemini"].streamer-mode-active .masked-data {
-  filter: blur(5px);
-  user-select: none; 
-  -webkit-user-select: none; 
-  -moz-user-select: none; 
-  -ms-user-select: none; 
+  filter: blur(5px) !important;
+  user-select: none !important; 
+  -webkit-user-select: none !important; 
+  -moz-user-select: none !important; 
+  -ms-user-select: none !important; 
 }
 
 /* Optional hover */
